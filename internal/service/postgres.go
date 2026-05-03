@@ -23,7 +23,7 @@ func (m *postgresManager) Provision(ctx context.Context, spec ProvisionSpec) (*p
 
 	_, err := m.docker.ServiceCreate(ctx, docker.ServiceCreateSpec{
 		Name:    svcName,
-		Image:   "postgres:16-alpine",
+		Image:   "postgres:18-alpine",
 		Network: spec.Network,
 		Env: []string{
 			"POSTGRES_DB=" + spec.DBName,
