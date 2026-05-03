@@ -15,6 +15,7 @@
 # PaaStry local state
 .paastry/
 paastry.db
+/paastry
 *.db
 *.db-shm
 *.db-wal

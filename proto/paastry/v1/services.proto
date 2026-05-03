@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package paastry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/LoriKarikari/paastry/gen/paastry/v1;paastryv1";
+
+service ServiceService {
+  rpc ProvisionService(ProvisionServiceRequest) returns (ProvisionServiceResponse);
+  rpc GetService(GetServiceRequest) returns (GetServiceResponse);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+}
+
+enum ServiceType {
+  SERVICE_TYPE_UNSPECIFIED = 0;
+  SERVICE_TYPE_POSTGRES = 1;
+  SERVICE_TYPE_REDIS = 2;
+  SERVICE_TYPE_VALKEY = 3;
+}
+
+enum ServiceState {
+  SERVICE_STATE_UNSPECIFIED = 0;
+  SERVICE_STATE_PROVISIONING = 1;
+  SERVICE_STATE_RUNNING = 2;
+  SERVICE_STATE_FAILED = 3;
+  SERVICE_STATE_DEPROVISIONED = 4;
+}
+
+message Service {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  ServiceType type = 4;
+  ServiceState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ProvisionServiceRequest {
+  string tenant_id = 1;
+  string name = 2;
+  ServiceType type = 3;
+}
+
+message ProvisionServiceResponse {
+  Service service = 1;
+}
+
+message GetServiceRequest {
+  string service_id = 1;
+}
+
+message GetServiceResponse {
+  Service service = 1;
+}
+
+message ListServicesRequest {
+  string tenant_id = 1;
+}
+
+message ListServicesResponse {
+  repeated Service services = 1;
+}
