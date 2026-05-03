@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package paastry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/LoriKarikari/paastry/gen/paastry/v1;paastryv1";
+
+service TenantService {
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
+  rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+}
+
+message Tenant {
+  string id = 1;
+  string name = 2;
+  string network_name = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message CreateTenantRequest {
+  string name = 1;
+}
+
+message CreateTenantResponse {
+  Tenant tenant = 1;
+}
+
+message GetTenantRequest {
+  string tenant_id = 1;
+}
+
+message GetTenantResponse {
+  Tenant tenant = 1;
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse {
+  repeated Tenant tenants = 1;
+}

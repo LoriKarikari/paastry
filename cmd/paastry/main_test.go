@@ -14,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	paastryv1 "github.com/LoriKarikari/paastry/gen/paastry/v1"
+	"github.com/LoriKarikari/paastry/gen/paastry/v1/paastryv1connect"
 	_ "modernc.org/sqlite"
 )
 
@@ -243,6 +246,66 @@ func TestRunServerServesHealthzAfterInit(t *testing.T) {
 		done <- run(ctx, &stdout, &stderr, []string{"paastry", "server"}, getenv)
 	}()
 
+	waitForHealthz(t, port, &stderr)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown: %v", err)
+	}
+}
+
+func TestRunServerListsDefaultTenant(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	port := freePort(t)
+	getenv := func(key string) string {
+		switch key {
+		case "PAASTRY_HOME":
+			return home
+		case "HOST":
+			return "127.0.0.1"
+		case "PORT":
+			return port
+		default:
+			return ""
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run(context.Background(), &stdout, &stderr, []string{"paastry", "init"}, getenv); err != nil {
+		t.Fatalf("run init: %v\nstderr: %s", err, stderr.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, &stdout, &stderr, []string{"paastry", "server"}, getenv)
+	}()
+	waitForHealthz(t, port, &stderr)
+
+	client := paastryv1connect.NewTenantServiceClient(http.DefaultClient, fmt.Sprintf("http://127.0.0.1:%s", port))
+	res, err := client.ListTenants(context.Background(), connect.NewRequest(&paastryv1.ListTenantsRequest{}))
+	if err != nil {
+		t.Fatalf("list tenants: %v", err)
+	}
+	if len(res.Msg.Tenants) != 1 {
+		t.Fatalf("tenant count = %d, want 1", len(res.Msg.Tenants))
+	}
+	if got := res.Msg.Tenants[0].Name; got != "default" {
+		t.Fatalf("tenant name = %q, want %q", got, "default")
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown: %v", err)
+	}
+}
+
+func waitForHealthz(t *testing.T, port string, stderr *bytes.Buffer) {
+	t.Helper()
+
 	url := fmt.Sprintf("http://127.0.0.1:%s/healthz", port)
 	var lastErr error
 	for range 50 {
@@ -250,10 +313,6 @@ func TestRunServerServesHealthzAfterInit(t *testing.T) {
 		if err == nil {
 			defer res.Body.Close()
 			if res.StatusCode == http.StatusOK {
-				cancel()
-				if err := <-done; err != nil {
-					t.Fatalf("server shutdown: %v", err)
-				}
 				return
 			}
 			lastErr = fmt.Errorf("status %d", res.StatusCode)

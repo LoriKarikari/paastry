@@ -12,7 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"connectrpc.com/connect"
 	"filippo.io/age"
+	paastryv1 "github.com/LoriKarikari/paastry/gen/paastry/v1"
+	"github.com/LoriKarikari/paastry/gen/paastry/v1/paastryv1connect"
 	_ "modernc.org/sqlite"
 )
 
@@ -71,6 +74,8 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 	}
 
 	mux := http.NewServeMux()
+	tenantPath, tenantHandler := paastryv1connect.NewTenantServiceHandler(tenantHandler{dbPath: filepath.Join(home, "paastry.db")})
+	mux.Handle(tenantPath, tenantHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -112,6 +117,54 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 		}
 		return nil
 	}
+}
+
+type tenantHandler struct {
+	dbPath string
+}
+
+func (h tenantHandler) CreateTenant(
+	_ context.Context,
+	_ *connect.Request[paastryv1.CreateTenantRequest],
+) (*connect.Response[paastryv1.CreateTenantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("create tenant not implemented"))
+}
+
+func (h tenantHandler) GetTenant(
+	_ context.Context,
+	_ *connect.Request[paastryv1.GetTenantRequest],
+) (*connect.Response[paastryv1.GetTenantResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("get tenant not implemented"))
+}
+
+func (h tenantHandler) ListTenants(
+	ctx context.Context,
+	_ *connect.Request[paastryv1.ListTenantsRequest],
+) (*connect.Response[paastryv1.ListTenantsResponse], error) {
+	db, err := sql.Open("sqlite", h.dbPath)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open sqlite database: %w", err))
+	}
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, `select id, name, network_name from tenants order by name`)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("list tenants: %w", err))
+	}
+	defer rows.Close()
+
+	var tenants []*paastryv1.Tenant
+	for rows.Next() {
+		tenant := &paastryv1.Tenant{}
+		if err := rows.Scan(&tenant.Id, &tenant.Name, &tenant.NetworkName); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("scan tenant: %w", err))
+		}
+		tenants = append(tenants, tenant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("iterate tenants: %w", err))
+	}
+	return connect.NewResponse(&paastryv1.ListTenantsResponse{Tenants: tenants}), nil
 }
 
 func paastryHome(getenv func(string) string) string {
