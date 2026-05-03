@@ -3,7 +3,9 @@ module github.com/LoriKarikari/paastry
 go 1.25.2
 
 require (
+	connectrpc.com/connect v1.19.2
 	filippo.io/age v1.3.1
+	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.50.0
 )
 
