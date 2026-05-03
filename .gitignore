@@ -1,0 +1,41 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# PaaStry local state
+.paastry/
+paastry.db
+*.db
+*.db-shm
+*.db-wal
+
+# Build outputs
+/bin/
+/dist/
+/build/
+/coverage/
+
+# Go
+air-bin
+tmp/
+*.test
+*.prof
+
+# Node / frontend
+node_modules/
+.pnpm-store/
+web/dist/
+web/coverage/
+
+# Logs
+*.log
