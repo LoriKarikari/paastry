@@ -30,6 +30,9 @@ func (m *postgresManager) Provision(ctx context.Context, spec ProvisionSpec) (*p
 			"POSTGRES_USER=" + spec.DBUser,
 			"POSTGRES_PASSWORD=" + spec.DBPassword,
 		},
+		Mounts: []docker.Mount{
+			{Source: "paastry-pg-" + spec.Name + "-data", Target: "/var/lib/postgresql/data"},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create postgres service: %w", err)

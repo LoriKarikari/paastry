@@ -164,32 +164,108 @@ func (h serviceHandler) ProvisionService(
 	ctx context.Context,
 	req *connect.Request[paastryv1.ProvisionServiceRequest],
 ) (*connect.Response[paastryv1.ProvisionServiceResponse], error) {
-	svc, err := h.manager.Provision(ctx, service.ProvisionSpec{
+	spec := service.ProvisionSpec{
 		Name:       req.Msg.Name,
 		TenantID:   req.Msg.TenantId,
 		Network:    "paastry-tenant-default",
 		DBName:     "app",
 		DBUser:     "app",
 		DBPassword: "changeme",
-	})
+	}
+
+	svc, err := h.manager.Provision(ctx, spec)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("provision service: %w", err))
 	}
+
+	_, err = h.db.ExecContext(ctx,
+		`insert into services (id, tenant_id, name, type, state) values (?, ?, ?, ?, ?)`,
+		svc.Id, spec.TenantID, spec.Name, "postgres", svc.State.String(),
+	)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("persist service: %w", err))
+	}
+
 	return connect.NewResponse(&paastryv1.ProvisionServiceResponse{Service: svc}), nil
 }
 
 func (h serviceHandler) GetService(
-	_ context.Context,
-	_ *connect.Request[paastryv1.GetServiceRequest],
+	ctx context.Context,
+	req *connect.Request[paastryv1.GetServiceRequest],
 ) (*connect.Response[paastryv1.GetServiceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("get service not implemented"))
+	svc := &paastryv1.Service{}
+	var typeStr, stateStr string
+	err := h.db.QueryRowContext(ctx,
+		`select id, tenant_id, name, type, state from services where id = ?`,
+		req.Msg.ServiceId,
+	).Scan(&svc.Id, &svc.TenantId, &svc.Name, &typeStr, &stateStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("service not found"))
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get service: %w", err))
+	}
+	svc.Type = parseServiceType(typeStr)
+	svc.State = parseServiceState(stateStr)
+	return connect.NewResponse(&paastryv1.GetServiceResponse{Service: svc}), nil
 }
 
 func (h serviceHandler) ListServices(
-	_ context.Context,
-	_ *connect.Request[paastryv1.ListServicesRequest],
+	ctx context.Context,
+	req *connect.Request[paastryv1.ListServicesRequest],
 ) (*connect.Response[paastryv1.ListServicesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("list services not implemented"))
+	rows, err := h.db.QueryContext(ctx,
+		`select id, tenant_id, name, type, state from services where tenant_id = ? order by name`,
+		req.Msg.TenantId,
+	)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("list services: %w", err))
+	}
+	defer rows.Close()
+
+	var services []*paastryv1.Service
+	for rows.Next() {
+		svc := &paastryv1.Service{}
+		var typeStr, stateStr string
+		if err := rows.Scan(&svc.Id, &svc.TenantId, &svc.Name, &typeStr, &stateStr); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("scan service: %w", err))
+		}
+		svc.Type = parseServiceType(typeStr)
+		svc.State = parseServiceState(stateStr)
+		services = append(services, svc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("iterate services: %w", err))
+	}
+	return connect.NewResponse(&paastryv1.ListServicesResponse{Services: services}), nil
+}
+
+func parseServiceType(s string) paastryv1.ServiceType {
+	switch s {
+	case "postgres":
+		return paastryv1.ServiceType_SERVICE_TYPE_POSTGRES
+	case "redis":
+		return paastryv1.ServiceType_SERVICE_TYPE_REDIS
+	case "valkey":
+		return paastryv1.ServiceType_SERVICE_TYPE_VALKEY
+	default:
+		return paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED
+	}
+}
+
+func parseServiceState(s string) paastryv1.ServiceState {
+	switch s {
+	case "provisioning":
+		return paastryv1.ServiceState_SERVICE_STATE_PROVISIONING
+	case "running":
+		return paastryv1.ServiceState_SERVICE_STATE_RUNNING
+	case "failed":
+		return paastryv1.ServiceState_SERVICE_STATE_FAILED
+	case "deprovisioned":
+		return paastryv1.ServiceState_SERVICE_STATE_DEPROVISIONED
+	default:
+		return paastryv1.ServiceState_SERVICE_STATE_UNSPECIFIED
+	}
 }
 
 func (h tenantHandler) ListTenants(
@@ -273,6 +349,16 @@ func initializeDatabase(path string) error {
 		insert into tenants (id, name, network_name)
 		values ('tenant-default', 'default', 'paastry-tenant-default')
 		on conflict(name) do nothing;
+
+		create table if not exists services (
+			id text primary key,
+			tenant_id text not null,
+			name text not null,
+			type text not null,
+			state text not null default 'provisioning',
+			created_at text not null default current_timestamp,
+			unique(tenant_id, name)
+		);
 	`); err != nil {
 		return fmt.Errorf("initialize sqlite database: %w", err)
 	}
