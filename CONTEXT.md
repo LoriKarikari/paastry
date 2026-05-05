@@ -23,13 +23,13 @@ The backend is written in Go and orchestrates infrastructure tooling via the Doc
 
 ## Language
 
-**Service**: A deployed workload managed by PaaStry. Can be a user App or a managed dependency (Postgres, Redis, etc.). Implements at least `ServiceManager`.
+**Service**: A deployed workload managed by PaaStry as a Docker Swarm service. Can be a user App or a managed dependency (Postgres, Redis, etc.). Its lifecycle includes validation, tenant network resolution, provisioning or deployment, metadata persistence, and state transitions.
 
 **App**: A user workload deployed from source (git push or Docker image). Built via Nixpacks auto-detection. Runs as a Docker Swarm service.
 
 **Managed service**: Infrastructure PaaStry operates on the user's behalf (Postgres, Redis, etc.). Runs as a Docker Swarm service. May implement `DataServiceManager` or `HAServiceManager`.
 
-**Tenant**: Isolation boundary. Each tenant gets its own Docker overlay network. Services in the same tenant communicate over this network.
+**Tenant**: Isolation boundary. Each tenant gets its own Docker overlay network. The default tenant and its network are created during `paastry init`; additional tenants and networks are created through `CreateTenant`.
 
 **Job**: A long-running async operation (provision, deploy, backup). Returns immediately, executes in a bounded goroutine pool. Composed of structured **steps**, each with its own status and output. Status streamed via `StreamJobStatus` and persisted in SQLite.
 
@@ -41,6 +41,8 @@ The backend is written in Go and orchestrates infrastructure tooling via the Doc
 
 **Control plane**: The PaaStry binary itself — a native Go process that orchestrates Docker containers, persists metadata, and serves the Connect RPC API.
 
+**Host bootstrap**: First-run preparation of the host Docker environment required by PaaStry, including Swarm initialization and default overlay networks. Runs automatically and idempotently before metadata creation during `paastry init`, narrates each host mutation, uses `PAASTRY_SWARM_ADVERTISE_ADDR` when set, must succeed for init to complete, never tears down global Swarm state, and is not self-healed by `paastry server`.
+
 **Stack**: A declarative set of services and their dependencies defined in `paastry.toml`. Deployed and torn down as a unit via `paastry up` / `paastry down`.
 
 **CLI**: Interactive-first command line interface. Commands show structured diffs before mutating, deploy full stacks in dependency order, and support an interactive REPL (`paastry shell`) for exploration and debugging.
@@ -51,6 +53,7 @@ The backend is written in Go and orchestrates infrastructure tooling via the Doc
 - A **Service** may depend on zero or more other **Services**
 - A **Job** targets exactly one **Service**
 - PaaStry **Control plane** runs as a native binary; all **Services** run as Docker containers
+- **Host bootstrap** prepares Docker so **Tenants** can receive overlay networks and **Services** can run in Swarm
 
 ## What PaaStry is NOT
 

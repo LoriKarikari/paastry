@@ -38,6 +38,7 @@ type ServiceCreateSpec struct {
 	Env     []string
 	Network string
 	Mounts  []Mount
+	Port    uint32
 }
 
 type Service struct {
@@ -54,14 +55,16 @@ func New() (*Client, error) {
 }
 
 func (c *Client) NetworkCreate(ctx context.Context, spec NetworkCreateSpec) (*Network, error) {
-	resp, err := c.inner.NetworkCreate(ctx, spec.Name, client.NetworkCreateOptions{
-		Driver: spec.Driver,
-		IPAM: &network.IPAM{
+	opts := client.NetworkCreateOptions{Driver: spec.Driver}
+	if spec.Subnet.IsValid() || spec.Gateway.IsValid() {
+		opts.IPAM = &network.IPAM{
 			Config: []network.IPAMConfig{
 				{Subnet: spec.Subnet, Gateway: spec.Gateway},
 			},
-		},
-	})
+		}
+	}
+
+	resp, err := c.inner.NetworkCreate(ctx, spec.Name, opts)
 	if err != nil {
 		return nil, fmt.Errorf("network create: %w", err)
 	}
@@ -116,12 +119,24 @@ func (c *Client) ServiceCreate(ctx context.Context, spec ServiceCreateSpec) (*Se
 		task.Networks = []swarm.NetworkAttachmentConfig{{Target: spec.Network}}
 	}
 
-	resp, err := c.inner.ServiceCreate(ctx, client.ServiceCreateOptions{
-		Spec: swarm.ServiceSpec{
-			Annotations:  swarm.Annotations{Name: spec.Name},
-			TaskTemplate: task,
-		},
-	})
+	svcSpec := swarm.ServiceSpec{
+		Annotations:  swarm.Annotations{Name: spec.Name},
+		TaskTemplate: task,
+	}
+	if spec.Port > 0 {
+		svcSpec.EndpointSpec = &swarm.EndpointSpec{
+			Ports: []swarm.PortConfig{
+				{
+					Protocol:      network.TCP,
+					TargetPort:    spec.Port,
+					PublishedPort: 0,
+					PublishMode:   swarm.PortConfigPublishModeIngress,
+				},
+			},
+		}
+	}
+
+	resp, err := c.inner.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: svcSpec})
 	if err != nil {
 		return nil, fmt.Errorf("service create: %w", err)
 	}

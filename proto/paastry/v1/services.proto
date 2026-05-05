@@ -8,6 +8,7 @@ option go_package = "github.com/LoriKarikari/paastry/gen/paastry/v1;paastryv1";
 
 service ServiceService {
   rpc ProvisionService(ProvisionServiceRequest) returns (ProvisionServiceResponse);
+  rpc DeployService(DeployServiceRequest) returns (DeployServiceResponse);
   rpc GetService(GetServiceRequest) returns (GetServiceResponse);
   rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
 }
@@ -17,6 +18,7 @@ enum ServiceType {
   SERVICE_TYPE_POSTGRES = 1;
   SERVICE_TYPE_REDIS = 2;
   SERVICE_TYPE_VALKEY = 3;
+  SERVICE_TYPE_APP = 4;
 }
 
 enum ServiceState {
@@ -40,6 +42,8 @@ message ProvisionServiceRequest {
   string tenant_id = 1;
   string name = 2;
   ServiceType type = 3;
+  string image = 4;
+  int32 port = 5;
 }
 
 message ProvisionServiceResponse {
@@ -56,6 +60,16 @@ message GetServiceResponse {
 
 message ListServicesRequest {
   string tenant_id = 1;
+}
+
+message DeployServiceRequest {
+  string service_id = 1;
+  string image = 2;
+  int32 port = 3;
+}
+
+message DeployServiceResponse {
+  Service service = 1;
 }
 
 message ListServicesResponse {

@@ -36,6 +36,9 @@ const (
 	// ServiceServiceProvisionServiceProcedure is the fully-qualified name of the ServiceService's
 	// ProvisionService RPC.
 	ServiceServiceProvisionServiceProcedure = "/paastry.v1.ServiceService/ProvisionService"
+	// ServiceServiceDeployServiceProcedure is the fully-qualified name of the ServiceService's
+	// DeployService RPC.
+	ServiceServiceDeployServiceProcedure = "/paastry.v1.ServiceService/DeployService"
 	// ServiceServiceGetServiceProcedure is the fully-qualified name of the ServiceService's GetService
 	// RPC.
 	ServiceServiceGetServiceProcedure = "/paastry.v1.ServiceService/GetService"
@@ -47,6 +50,7 @@ const (
 // ServiceServiceClient is a client for the paastry.v1.ServiceService service.
 type ServiceServiceClient interface {
 	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	DeployService(context.Context, *connect.Request[v1.DeployServiceRequest]) (*connect.Response[v1.DeployServiceResponse], error)
 	GetService(context.Context, *connect.Request[v1.GetServiceRequest]) (*connect.Response[v1.GetServiceResponse], error)
 	ListServices(context.Context, *connect.Request[v1.ListServicesRequest]) (*connect.Response[v1.ListServicesResponse], error)
 }
@@ -68,6 +72,12 @@ func NewServiceServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(serviceServiceMethods.ByName("ProvisionService")),
 			connect.WithClientOptions(opts...),
 		),
+		deployService: connect.NewClient[v1.DeployServiceRequest, v1.DeployServiceResponse](
+			httpClient,
+			baseURL+ServiceServiceDeployServiceProcedure,
+			connect.WithSchema(serviceServiceMethods.ByName("DeployService")),
+			connect.WithClientOptions(opts...),
+		),
 		getService: connect.NewClient[v1.GetServiceRequest, v1.GetServiceResponse](
 			httpClient,
 			baseURL+ServiceServiceGetServiceProcedure,
@@ -86,6 +96,7 @@ func NewServiceServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 // serviceServiceClient implements ServiceServiceClient.
 type serviceServiceClient struct {
 	provisionService *connect.Client[v1.ProvisionServiceRequest, v1.ProvisionServiceResponse]
+	deployService    *connect.Client[v1.DeployServiceRequest, v1.DeployServiceResponse]
 	getService       *connect.Client[v1.GetServiceRequest, v1.GetServiceResponse]
 	listServices     *connect.Client[v1.ListServicesRequest, v1.ListServicesResponse]
 }
@@ -93,6 +104,11 @@ type serviceServiceClient struct {
 // ProvisionService calls paastry.v1.ServiceService.ProvisionService.
 func (c *serviceServiceClient) ProvisionService(ctx context.Context, req *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error) {
 	return c.provisionService.CallUnary(ctx, req)
+}
+
+// DeployService calls paastry.v1.ServiceService.DeployService.
+func (c *serviceServiceClient) DeployService(ctx context.Context, req *connect.Request[v1.DeployServiceRequest]) (*connect.Response[v1.DeployServiceResponse], error) {
+	return c.deployService.CallUnary(ctx, req)
 }
 
 // GetService calls paastry.v1.ServiceService.GetService.
@@ -108,6 +124,7 @@ func (c *serviceServiceClient) ListServices(ctx context.Context, req *connect.Re
 // ServiceServiceHandler is an implementation of the paastry.v1.ServiceService service.
 type ServiceServiceHandler interface {
 	ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error)
+	DeployService(context.Context, *connect.Request[v1.DeployServiceRequest]) (*connect.Response[v1.DeployServiceResponse], error)
 	GetService(context.Context, *connect.Request[v1.GetServiceRequest]) (*connect.Response[v1.GetServiceResponse], error)
 	ListServices(context.Context, *connect.Request[v1.ListServicesRequest]) (*connect.Response[v1.ListServicesResponse], error)
 }
@@ -123,6 +140,12 @@ func NewServiceServiceHandler(svc ServiceServiceHandler, opts ...connect.Handler
 		ServiceServiceProvisionServiceProcedure,
 		svc.ProvisionService,
 		connect.WithSchema(serviceServiceMethods.ByName("ProvisionService")),
+		connect.WithHandlerOptions(opts...),
+	)
+	serviceServiceDeployServiceHandler := connect.NewUnaryHandler(
+		ServiceServiceDeployServiceProcedure,
+		svc.DeployService,
+		connect.WithSchema(serviceServiceMethods.ByName("DeployService")),
 		connect.WithHandlerOptions(opts...),
 	)
 	serviceServiceGetServiceHandler := connect.NewUnaryHandler(
@@ -141,6 +164,8 @@ func NewServiceServiceHandler(svc ServiceServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case ServiceServiceProvisionServiceProcedure:
 			serviceServiceProvisionServiceHandler.ServeHTTP(w, r)
+		case ServiceServiceDeployServiceProcedure:
+			serviceServiceDeployServiceHandler.ServeHTTP(w, r)
 		case ServiceServiceGetServiceProcedure:
 			serviceServiceGetServiceHandler.ServeHTTP(w, r)
 		case ServiceServiceListServicesProcedure:
@@ -156,6 +181,10 @@ type UnimplementedServiceServiceHandler struct{}
 
 func (UnimplementedServiceServiceHandler) ProvisionService(context.Context, *connect.Request[v1.ProvisionServiceRequest]) (*connect.Response[v1.ProvisionServiceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paastry.v1.ServiceService.ProvisionService is not implemented"))
+}
+
+func (UnimplementedServiceServiceHandler) DeployService(context.Context, *connect.Request[v1.DeployServiceRequest]) (*connect.Response[v1.DeployServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paastry.v1.ServiceService.DeployService is not implemented"))
 }
 
 func (UnimplementedServiceServiceHandler) GetService(context.Context, *connect.Request[v1.GetServiceRequest]) (*connect.Response[v1.GetServiceResponse], error) {
