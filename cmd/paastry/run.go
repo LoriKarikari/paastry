@@ -87,14 +87,10 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 	}
 
 	mux := http.NewServeMux()
-	tenantPath, tenantHandler := paastryv1connect.NewTenantServiceHandler(tenantHandler{dbPath: filepath.Join(home, "paastry.db")})
+	tenantPath, tenantHandler := paastryv1connect.NewTenantServiceHandler(tenantHandler{db: db, docker: dc})
 	mux.Handle(tenantPath, tenantHandler)
 	svcPath, svcHandler := paastryv1connect.NewServiceServiceHandler(serviceHandler{
-		db: db,
-		managers: map[paastryv1.ServiceType]service.Manager{
-			paastryv1.ServiceType_SERVICE_TYPE_POSTGRES: service.NewPostgresManager(dc),
-			paastryv1.ServiceType_SERVICE_TYPE_APP:      service.NewAppManager(dc),
-		},
+		lifecycle: service.NewLifecycle(db, dc),
 	})
 	mux.Handle(svcPath, svcHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -141,162 +137,133 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 }
 
 type tenantHandler struct {
-	dbPath string
+	db     *sql.DB
+	docker *docker.Client
 }
 
 func (h tenantHandler) CreateTenant(
-	_ context.Context,
-	_ *connect.Request[paastryv1.CreateTenantRequest],
+	ctx context.Context,
+	req *connect.Request[paastryv1.CreateTenantRequest],
 ) (*connect.Response[paastryv1.CreateTenantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("create tenant not implemented"))
+	name := req.Msg.Name
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tenant name is required"))
+	}
+	id := "tenant-" + name
+	networkName := "paastry-" + id
+
+	exists, err := h.docker.NetworkExists(ctx, networkName)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("check network: %w", err))
+	}
+	if !exists {
+		if _, err := h.docker.NetworkCreate(ctx, docker.NetworkCreateSpec{
+			Name:   networkName,
+			Driver: "overlay",
+		}); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("create network: %w", err))
+		}
+	}
+
+	_, err = h.db.ExecContext(ctx,
+		`insert into tenants (id, name, network_name) values (?, ?, ?)`,
+		id, name, networkName,
+	)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("insert tenant: %w", err))
+	}
+
+	return connect.NewResponse(&paastryv1.CreateTenantResponse{
+		Tenant: &paastryv1.Tenant{Id: id, Name: name, NetworkName: networkName},
+	}), nil
 }
 
 func (h tenantHandler) GetTenant(
-	_ context.Context,
-	_ *connect.Request[paastryv1.GetTenantRequest],
+	ctx context.Context,
+	req *connect.Request[paastryv1.GetTenantRequest],
 ) (*connect.Response[paastryv1.GetTenantResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("get tenant not implemented"))
+	tenant := &paastryv1.Tenant{}
+	err := h.db.QueryRowContext(ctx,
+		`select id, name, network_name from tenants where id = ?`,
+		req.Msg.TenantId,
+	).Scan(&tenant.Id, &tenant.Name, &tenant.NetworkName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("tenant not found"))
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get tenant: %w", err))
+	}
+	return connect.NewResponse(&paastryv1.GetTenantResponse{Tenant: tenant}), nil
 }
 
 type serviceHandler struct {
-	db       *sql.DB
-	managers map[paastryv1.ServiceType]service.Manager
-}
-
-func (h serviceHandler) managerFor(typ paastryv1.ServiceType) (service.Manager, error) {
-	m, ok := h.managers[typ]
-	if !ok {
-		return nil, fmt.Errorf("unsupported service type: %v", typ)
-	}
-	return m, nil
+	lifecycle *service.Lifecycle
 }
 
 func (h serviceHandler) ProvisionService(
 	ctx context.Context,
 	req *connect.Request[paastryv1.ProvisionServiceRequest],
 ) (*connect.Response[paastryv1.ProvisionServiceResponse], error) {
-	mgr, err := h.managerFor(req.Msg.Type)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
-	}
-
-	spec := service.ProvisionSpec{
+	rec, err := h.lifecycle.Provision(ctx, service.ProvisionSpec{
 		Name:       req.Msg.Name,
 		TenantID:   req.Msg.TenantId,
-		Network:    "paastry-tenant-default",
+		Type:       serviceTypeFromProto(req.Msg.Type),
 		Image:      req.Msg.GetImage(),
 		Port:       coercePort(req.Msg.GetPort()),
 		DBName:     "app",
 		DBUser:     "app",
 		DBPassword: "changeme",
+	})
+	if errors.Is(err, service.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("tenant not found"))
 	}
-
-	svc, err := mgr.Provision(ctx, spec)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("provision service: %w", err))
 	}
-
-	_, err = h.db.ExecContext(ctx,
-		`insert into services (id, tenant_id, name, type, state) values (?, ?, ?, ?, ?)`,
-		svc.Id, spec.TenantID, spec.Name, svcTypeDB(req.Msg.Type), svc.State.String(),
-	)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("persist service: %w", err))
-	}
-
-	return connect.NewResponse(&paastryv1.ProvisionServiceResponse{Service: svc}), nil
+	return connect.NewResponse(&paastryv1.ProvisionServiceResponse{Service: serviceRecordToProto(rec)}), nil
 }
 
 func (h serviceHandler) DeployService(
 	ctx context.Context,
 	req *connect.Request[paastryv1.DeployServiceRequest],
 ) (*connect.Response[paastryv1.DeployServiceResponse], error) {
-	mgr, err := h.managerFor(paastryv1.ServiceType_SERVICE_TYPE_APP)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	rec, err := h.lifecycle.Deploy(ctx, req.Msg.ServiceId, req.Msg.Image, coercePort(req.Msg.Port))
+	if errors.Is(err, service.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("service not found"))
 	}
-
-	spec := service.ProvisionSpec{
-		Name:    "",
-		Network: "paastry-tenant-default",
-		Image:   req.Msg.Image,
-		Port:    coercePort(req.Msg.Port),
-	}
-
-	svc, err := mgr.Deploy(ctx, spec, req.Msg.ServiceId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("deploy service: %w", err))
 	}
-
-	return connect.NewResponse(&paastryv1.DeployServiceResponse{Service: svc}), nil
+	return connect.NewResponse(&paastryv1.DeployServiceResponse{Service: serviceRecordToProto(rec)}), nil
 }
 
 func (h serviceHandler) GetService(
 	ctx context.Context,
 	req *connect.Request[paastryv1.GetServiceRequest],
 ) (*connect.Response[paastryv1.GetServiceResponse], error) {
-	svc := &paastryv1.Service{}
-	var typeStr, stateStr string
-	err := h.db.QueryRowContext(ctx,
-		`select id, tenant_id, name, type, state from services where id = ?`,
-		req.Msg.ServiceId,
-	).Scan(&svc.Id, &svc.TenantId, &svc.Name, &typeStr, &stateStr)
-	if errors.Is(err, sql.ErrNoRows) {
+	rec, err := h.lifecycle.Get(ctx, req.Msg.ServiceId)
+	if errors.Is(err, service.ErrNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("service not found"))
 	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("get service: %w", err))
 	}
-	svc.Type = parseServiceType(typeStr)
-	svc.State = parseServiceState(stateStr)
-	return connect.NewResponse(&paastryv1.GetServiceResponse{Service: svc}), nil
+	return connect.NewResponse(&paastryv1.GetServiceResponse{Service: serviceRecordToProto(rec)}), nil
 }
 
 func (h serviceHandler) ListServices(
 	ctx context.Context,
 	req *connect.Request[paastryv1.ListServicesRequest],
 ) (*connect.Response[paastryv1.ListServicesResponse], error) {
-	rows, err := h.db.QueryContext(ctx,
-		`select id, tenant_id, name, type, state from services where tenant_id = ? order by name`,
-		req.Msg.TenantId,
-	)
+	records, err := h.lifecycle.List(ctx, req.Msg.TenantId)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("list services: %w", err))
 	}
-	defer rows.Close()
-
-	var services []*paastryv1.Service
-	for rows.Next() {
-		svc := &paastryv1.Service{}
-		var typeStr, stateStr string
-		if err := rows.Scan(&svc.Id, &svc.TenantId, &svc.Name, &typeStr, &stateStr); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("scan service: %w", err))
-		}
-		svc.Type = parseServiceType(typeStr)
-		svc.State = parseServiceState(stateStr)
-		services = append(services, svc)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("iterate services: %w", err))
+	services := make([]*paastryv1.Service, 0, len(records))
+	for _, rec := range records {
+		services = append(services, serviceRecordToProto(rec))
 	}
 	return connect.NewResponse(&paastryv1.ListServicesResponse{Services: services}), nil
-}
-
-func svcTypeDB(t paastryv1.ServiceType) string {
-	switch t {
-	case paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
-		return "unspecified"
-	case paastryv1.ServiceType_SERVICE_TYPE_POSTGRES:
-		return "postgres"
-	case paastryv1.ServiceType_SERVICE_TYPE_REDIS:
-		return "redis"
-	case paastryv1.ServiceType_SERVICE_TYPE_VALKEY:
-		return "valkey"
-	case paastryv1.ServiceType_SERVICE_TYPE_APP:
-		return "app"
-	default:
-		return "unspecified"
-	}
 }
 
 func coercePort(p int32) uint32 {
@@ -306,31 +273,48 @@ func coercePort(p int32) uint32 {
 	return uint32(p)
 }
 
-func parseServiceType(s string) paastryv1.ServiceType {
-	switch s {
-	case "postgres":
+func serviceTypeFromProto(t paastryv1.ServiceType) service.Type {
+	switch t {
+	case paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
+		return ""
+	case paastryv1.ServiceType_SERVICE_TYPE_POSTGRES:
+		return service.TypePostgres
+	case paastryv1.ServiceType_SERVICE_TYPE_REDIS:
+		return ""
+	case paastryv1.ServiceType_SERVICE_TYPE_VALKEY:
+		return ""
+	case paastryv1.ServiceType_SERVICE_TYPE_APP:
+		return service.TypeApp
+	default:
+		return ""
+	}
+}
+
+func serviceRecordToProto(rec *service.Record) *paastryv1.Service {
+	return &paastryv1.Service{
+		Id:       rec.ID,
+		TenantId: rec.TenantID,
+		Name:     rec.Name,
+		Type:     serviceTypeToProto(rec.Type),
+		State:    serviceStateToProto(rec.State),
+	}
+}
+
+func serviceTypeToProto(t service.Type) paastryv1.ServiceType {
+	switch t {
+	case service.TypePostgres:
 		return paastryv1.ServiceType_SERVICE_TYPE_POSTGRES
-	case "redis":
-		return paastryv1.ServiceType_SERVICE_TYPE_REDIS
-	case "valkey":
-		return paastryv1.ServiceType_SERVICE_TYPE_VALKEY
-	case "app":
+	case service.TypeApp:
 		return paastryv1.ServiceType_SERVICE_TYPE_APP
 	default:
 		return paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED
 	}
 }
 
-func parseServiceState(s string) paastryv1.ServiceState {
+func serviceStateToProto(s service.State) paastryv1.ServiceState {
 	switch s {
-	case "provisioning":
-		return paastryv1.ServiceState_SERVICE_STATE_PROVISIONING
-	case "running":
+	case service.StateRunning:
 		return paastryv1.ServiceState_SERVICE_STATE_RUNNING
-	case "failed":
-		return paastryv1.ServiceState_SERVICE_STATE_FAILED
-	case "deprovisioned":
-		return paastryv1.ServiceState_SERVICE_STATE_DEPROVISIONED
 	default:
 		return paastryv1.ServiceState_SERVICE_STATE_UNSPECIFIED
 	}
@@ -340,13 +324,7 @@ func (h tenantHandler) ListTenants(
 	ctx context.Context,
 	_ *connect.Request[paastryv1.ListTenantsRequest],
 ) (*connect.Response[paastryv1.ListTenantsResponse], error) {
-	db, err := sql.Open("sqlite", h.dbPath)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("open sqlite database: %w", err))
-	}
-	defer db.Close()
-
-	rows, err := db.QueryContext(ctx, `select id, name, network_name from tenants order by name`)
+	rows, err := h.db.QueryContext(ctx, `select id, name, network_name from tenants order by name`)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("list tenants: %w", err))
 	}

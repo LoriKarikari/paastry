@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
 
-	paastryv1 "github.com/LoriKarikari/paastry/gen/paastry/v1"
 	"github.com/LoriKarikari/paastry/internal/docker"
 )
 
@@ -16,7 +16,47 @@ type DockerClient interface {
 	ServiceRemove(ctx context.Context, id string) error
 }
 
+type Type string
+
+const (
+	TypePostgres Type = "postgres"
+	TypeApp      Type = "app"
+)
+
+type State string
+
+const StateRunning State = "running"
+
 type ProvisionSpec struct {
+	Name       string
+	TenantID   string
+	Type       Type
+	Image      string
+	Port       uint32
+	DBName     string
+	DBUser     string
+	DBPassword string
+}
+
+type Record struct {
+	ID       string
+	TenantID string
+	Name     string
+	Type     Type
+	State    State
+}
+
+type Lifecycle struct {
+	db       *sql.DB
+	managers map[Type]manager
+}
+
+type manager interface {
+	Provision(ctx context.Context, spec provisionerSpec) (*Record, error)
+	Deploy(ctx context.Context, spec provisionerSpec, serviceID string) (*Record, error)
+}
+
+type provisionerSpec struct {
 	Name       string
 	TenantID   string
 	Network    string
@@ -27,7 +67,12 @@ type ProvisionSpec struct {
 	DBPassword string
 }
 
-type Manager interface {
-	Provision(ctx context.Context, spec ProvisionSpec) (*paastryv1.Service, error)
-	Deploy(ctx context.Context, spec ProvisionSpec, serviceID string) (*paastryv1.Service, error)
+func NewLifecycle(db *sql.DB, docker DockerClient) *Lifecycle {
+	return &Lifecycle{
+		db: db,
+		managers: map[Type]manager{
+			TypePostgres: newPostgresManager(docker),
+			TypeApp:      newAppManager(docker),
+		},
+	}
 }

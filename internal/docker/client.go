@@ -55,14 +55,16 @@ func New() (*Client, error) {
 }
 
 func (c *Client) NetworkCreate(ctx context.Context, spec NetworkCreateSpec) (*Network, error) {
-	resp, err := c.inner.NetworkCreate(ctx, spec.Name, client.NetworkCreateOptions{
-		Driver: spec.Driver,
-		IPAM: &network.IPAM{
+	opts := client.NetworkCreateOptions{Driver: spec.Driver}
+	if spec.Subnet.IsValid() || spec.Gateway.IsValid() {
+		opts.IPAM = &network.IPAM{
 			Config: []network.IPAMConfig{
 				{Subnet: spec.Subnet, Gateway: spec.Gateway},
 			},
-		},
-	})
+		}
+	}
+
+	resp, err := c.inner.NetworkCreate(ctx, spec.Name, opts)
 	if err != nil {
 		return nil, fmt.Errorf("network create: %w", err)
 	}

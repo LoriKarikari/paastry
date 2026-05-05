@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	paastryv1 "github.com/LoriKarikari/paastry/gen/paastry/v1"
 	"github.com/LoriKarikari/paastry/internal/docker"
 	"github.com/google/uuid"
 )
@@ -13,11 +12,11 @@ type postgresManager struct {
 	docker DockerClient
 }
 
-func NewPostgresManager(docker DockerClient) Manager {
+func newPostgresManager(docker DockerClient) manager {
 	return &postgresManager{docker: docker}
 }
 
-func (m *postgresManager) Provision(ctx context.Context, spec ProvisionSpec) (*paastryv1.Service, error) {
+func (m *postgresManager) Provision(ctx context.Context, spec provisionerSpec) (*Record, error) {
 	id := uuid.NewString()
 	svcName := "paastry-postgres-" + spec.Name
 
@@ -38,14 +37,15 @@ func (m *postgresManager) Provision(ctx context.Context, spec ProvisionSpec) (*p
 		return nil, fmt.Errorf("create postgres service: %w", err)
 	}
 
-	return &paastryv1.Service{
-		Id:    id,
-		Name:  spec.Name,
-		Type:  paastryv1.ServiceType_SERVICE_TYPE_POSTGRES,
-		State: paastryv1.ServiceState_SERVICE_STATE_RUNNING,
+	return &Record{
+		ID:       id,
+		TenantID: spec.TenantID,
+		Name:     spec.Name,
+		Type:     TypePostgres,
+		State:    StateRunning,
 	}, nil
 }
 
-func (m *postgresManager) Deploy(_ context.Context, _ ProvisionSpec, _ string) (*paastryv1.Service, error) {
+func (m *postgresManager) Deploy(_ context.Context, _ provisionerSpec, _ string) (*Record, error) {
 	return nil, fmt.Errorf("deploy not supported for postgres")
 }
