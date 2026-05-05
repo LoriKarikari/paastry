@@ -16,6 +16,8 @@ import (
 	"filippo.io/age"
 	paastryv1 "github.com/LoriKarikari/paastry/gen/paastry/v1"
 	"github.com/LoriKarikari/paastry/gen/paastry/v1/paastryv1connect"
+	"github.com/LoriKarikari/paastry/internal/docker"
+	"github.com/LoriKarikari/paastry/internal/service"
 	_ "modernc.org/sqlite"
 )
 
@@ -73,9 +75,25 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 		return fmt.Errorf("stat sqlite database: %w", err)
 	}
 
+	db, err := sql.Open("sqlite", filepath.Join(home, "paastry.db"))
+	if err != nil {
+		return fmt.Errorf("open sqlite database: %w", err)
+	}
+	defer db.Close()
+
+	dc, err := docker.New()
+	if err != nil {
+		return fmt.Errorf("docker client: %w", err)
+	}
+
 	mux := http.NewServeMux()
 	tenantPath, tenantHandler := paastryv1connect.NewTenantServiceHandler(tenantHandler{dbPath: filepath.Join(home, "paastry.db")})
 	mux.Handle(tenantPath, tenantHandler)
+	svcPath, svcHandler := paastryv1connect.NewServiceServiceHandler(serviceHandler{
+		db:      db,
+		manager: service.NewPostgresManager(dc),
+	})
+	mux.Handle(svcPath, svcHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -135,6 +153,43 @@ func (h tenantHandler) GetTenant(
 	_ *connect.Request[paastryv1.GetTenantRequest],
 ) (*connect.Response[paastryv1.GetTenantResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("get tenant not implemented"))
+}
+
+type serviceHandler struct {
+	db      *sql.DB
+	manager service.Manager
+}
+
+func (h serviceHandler) ProvisionService(
+	ctx context.Context,
+	req *connect.Request[paastryv1.ProvisionServiceRequest],
+) (*connect.Response[paastryv1.ProvisionServiceResponse], error) {
+	svc, err := h.manager.Provision(ctx, service.ProvisionSpec{
+		Name:       req.Msg.Name,
+		TenantID:   req.Msg.TenantId,
+		Network:    "paastry-tenant-default",
+		DBName:     "app",
+		DBUser:     "app",
+		DBPassword: "changeme",
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("provision service: %w", err))
+	}
+	return connect.NewResponse(&paastryv1.ProvisionServiceResponse{Service: svc}), nil
+}
+
+func (h serviceHandler) GetService(
+	_ context.Context,
+	_ *connect.Request[paastryv1.GetServiceRequest],
+) (*connect.Response[paastryv1.GetServiceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("get service not implemented"))
+}
+
+func (h serviceHandler) ListServices(
+	_ context.Context,
+	_ *connect.Request[paastryv1.ListServicesRequest],
+) (*connect.Response[paastryv1.ListServicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("list services not implemented"))
 }
 
 func (h tenantHandler) ListTenants(
