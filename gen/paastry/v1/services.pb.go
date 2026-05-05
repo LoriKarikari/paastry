@@ -29,6 +29,7 @@ const (
 	ServiceType_SERVICE_TYPE_POSTGRES    ServiceType = 1
 	ServiceType_SERVICE_TYPE_REDIS       ServiceType = 2
 	ServiceType_SERVICE_TYPE_VALKEY      ServiceType = 3
+	ServiceType_SERVICE_TYPE_APP         ServiceType = 4
 )
 
 // Enum value maps for ServiceType.
@@ -38,12 +39,14 @@ var (
 		1: "SERVICE_TYPE_POSTGRES",
 		2: "SERVICE_TYPE_REDIS",
 		3: "SERVICE_TYPE_VALKEY",
+		4: "SERVICE_TYPE_APP",
 	}
 	ServiceType_value = map[string]int32{
 		"SERVICE_TYPE_UNSPECIFIED": 0,
 		"SERVICE_TYPE_POSTGRES":    1,
 		"SERVICE_TYPE_REDIS":       2,
 		"SERVICE_TYPE_VALKEY":      3,
+		"SERVICE_TYPE_APP":         4,
 	}
 )
 
@@ -218,6 +221,8 @@ type ProvisionServiceRequest struct {
 	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	Type          ServiceType            `protobuf:"varint,3,opt,name=type,proto3,enum=paastry.v1.ServiceType" json:"type,omitempty"`
+	Image         string                 `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	Port          int32                  `protobuf:"varint,5,opt,name=port,proto3" json:"port,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -271,6 +276,20 @@ func (x *ProvisionServiceRequest) GetType() ServiceType {
 		return x.Type
 	}
 	return ServiceType_SERVICE_TYPE_UNSPECIFIED
+}
+
+func (x *ProvisionServiceRequest) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *ProvisionServiceRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
 }
 
 type ProvisionServiceResponse struct {
@@ -449,6 +468,110 @@ func (x *ListServicesRequest) GetTenantId() string {
 	return ""
 }
 
+type DeployServiceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServiceId     string                 `protobuf:"bytes,1,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployServiceRequest) Reset() {
+	*x = DeployServiceRequest{}
+	mi := &file_paastry_v1_services_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployServiceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployServiceRequest) ProtoMessage() {}
+
+func (x *DeployServiceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paastry_v1_services_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployServiceRequest.ProtoReflect.Descriptor instead.
+func (*DeployServiceRequest) Descriptor() ([]byte, []int) {
+	return file_paastry_v1_services_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DeployServiceRequest) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *DeployServiceRequest) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *DeployServiceRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+type DeployServiceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Service       *Service               `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployServiceResponse) Reset() {
+	*x = DeployServiceResponse{}
+	mi := &file_paastry_v1_services_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployServiceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployServiceResponse) ProtoMessage() {}
+
+func (x *DeployServiceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paastry_v1_services_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployServiceResponse.ProtoReflect.Descriptor instead.
+func (*DeployServiceResponse) Descriptor() ([]byte, []int) {
+	return file_paastry_v1_services_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *DeployServiceResponse) GetService() *Service {
+	if x != nil {
+		return x.Service
+	}
+	return nil
+}
+
 type ListServicesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Services      []*Service             `protobuf:"bytes,1,rep,name=services,proto3" json:"services,omitempty"`
@@ -458,7 +581,7 @@ type ListServicesResponse struct {
 
 func (x *ListServicesResponse) Reset() {
 	*x = ListServicesResponse{}
-	mi := &file_paastry_v1_services_proto_msgTypes[6]
+	mi := &file_paastry_v1_services_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -470,7 +593,7 @@ func (x *ListServicesResponse) String() string {
 func (*ListServicesResponse) ProtoMessage() {}
 
 func (x *ListServicesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paastry_v1_services_proto_msgTypes[6]
+	mi := &file_paastry_v1_services_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -483,7 +606,7 @@ func (x *ListServicesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListServicesResponse.ProtoReflect.Descriptor instead.
 func (*ListServicesResponse) Descriptor() ([]byte, []int) {
-	return file_paastry_v1_services_proto_rawDescGZIP(), []int{6}
+	return file_paastry_v1_services_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListServicesResponse) GetServices() []*Service {
@@ -506,11 +629,13 @@ const file_paastry_v1_services_proto_rawDesc = "" +
 	"\x04type\x18\x04 \x01(\x0e2\x17.paastry.v1.ServiceTypeR\x04type\x12.\n" +
 	"\x05state\x18\x05 \x01(\x0e2\x18.paastry.v1.ServiceStateR\x05state\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"w\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa1\x01\n" +
 	"\x17ProvisionServiceRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
-	"\x04type\x18\x03 \x01(\x0e2\x17.paastry.v1.ServiceTypeR\x04type\"I\n" +
+	"\x04type\x18\x03 \x01(\x0e2\x17.paastry.v1.ServiceTypeR\x04type\x12\x14\n" +
+	"\x05image\x18\x04 \x01(\tR\x05image\x12\x12\n" +
+	"\x04port\x18\x05 \x01(\x05R\x04port\"I\n" +
 	"\x18ProvisionServiceResponse\x12-\n" +
 	"\aservice\x18\x01 \x01(\v2\x13.paastry.v1.ServiceR\aservice\"2\n" +
 	"\x11GetServiceRequest\x12\x1d\n" +
@@ -519,22 +644,31 @@ const file_paastry_v1_services_proto_rawDesc = "" +
 	"\x12GetServiceResponse\x12-\n" +
 	"\aservice\x18\x01 \x01(\v2\x13.paastry.v1.ServiceR\aservice\"2\n" +
 	"\x13ListServicesRequest\x12\x1b\n" +
-	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"G\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"_\n" +
+	"\x14DeployServiceRequest\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x01 \x01(\tR\tserviceId\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12\x12\n" +
+	"\x04port\x18\x03 \x01(\x05R\x04port\"F\n" +
+	"\x15DeployServiceResponse\x12-\n" +
+	"\aservice\x18\x01 \x01(\v2\x13.paastry.v1.ServiceR\aservice\"G\n" +
 	"\x14ListServicesResponse\x12/\n" +
-	"\bservices\x18\x01 \x03(\v2\x13.paastry.v1.ServiceR\bservices*w\n" +
+	"\bservices\x18\x01 \x03(\v2\x13.paastry.v1.ServiceR\bservices*\x8d\x01\n" +
 	"\vServiceType\x12\x1c\n" +
 	"\x18SERVICE_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SERVICE_TYPE_POSTGRES\x10\x01\x12\x16\n" +
 	"\x12SERVICE_TYPE_REDIS\x10\x02\x12\x17\n" +
-	"\x13SERVICE_TYPE_VALKEY\x10\x03*\xa3\x01\n" +
+	"\x13SERVICE_TYPE_VALKEY\x10\x03\x12\x14\n" +
+	"\x10SERVICE_TYPE_APP\x10\x04*\xa3\x01\n" +
 	"\fServiceState\x12\x1d\n" +
 	"\x19SERVICE_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aSERVICE_STATE_PROVISIONING\x10\x01\x12\x19\n" +
 	"\x15SERVICE_STATE_RUNNING\x10\x02\x12\x18\n" +
 	"\x14SERVICE_STATE_FAILED\x10\x03\x12\x1f\n" +
-	"\x1bSERVICE_STATE_DEPROVISIONED\x10\x042\x8f\x02\n" +
+	"\x1bSERVICE_STATE_DEPROVISIONED\x10\x042\xe5\x02\n" +
 	"\x0eServiceService\x12]\n" +
-	"\x10ProvisionService\x12#.paastry.v1.ProvisionServiceRequest\x1a$.paastry.v1.ProvisionServiceResponse\x12K\n" +
+	"\x10ProvisionService\x12#.paastry.v1.ProvisionServiceRequest\x1a$.paastry.v1.ProvisionServiceResponse\x12T\n" +
+	"\rDeployService\x12 .paastry.v1.DeployServiceRequest\x1a!.paastry.v1.DeployServiceResponse\x12K\n" +
 	"\n" +
 	"GetService\x12\x1d.paastry.v1.GetServiceRequest\x1a\x1e.paastry.v1.GetServiceResponse\x12Q\n" +
 	"\fListServices\x12\x1f.paastry.v1.ListServicesRequest\x1a .paastry.v1.ListServicesResponseB:Z8github.com/LoriKarikari/paastry/gen/paastry/v1;paastryv1b\x06proto3"
@@ -552,7 +686,7 @@ func file_paastry_v1_services_proto_rawDescGZIP() []byte {
 }
 
 var file_paastry_v1_services_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_paastry_v1_services_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_paastry_v1_services_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_paastry_v1_services_proto_goTypes = []any{
 	(ServiceType)(0),                 // 0: paastry.v1.ServiceType
 	(ServiceState)(0),                // 1: paastry.v1.ServiceState
@@ -562,28 +696,33 @@ var file_paastry_v1_services_proto_goTypes = []any{
 	(*GetServiceRequest)(nil),        // 5: paastry.v1.GetServiceRequest
 	(*GetServiceResponse)(nil),       // 6: paastry.v1.GetServiceResponse
 	(*ListServicesRequest)(nil),      // 7: paastry.v1.ListServicesRequest
-	(*ListServicesResponse)(nil),     // 8: paastry.v1.ListServicesResponse
-	(*timestamppb.Timestamp)(nil),    // 9: google.protobuf.Timestamp
+	(*DeployServiceRequest)(nil),     // 8: paastry.v1.DeployServiceRequest
+	(*DeployServiceResponse)(nil),    // 9: paastry.v1.DeployServiceResponse
+	(*ListServicesResponse)(nil),     // 10: paastry.v1.ListServicesResponse
+	(*timestamppb.Timestamp)(nil),    // 11: google.protobuf.Timestamp
 }
 var file_paastry_v1_services_proto_depIdxs = []int32{
 	0,  // 0: paastry.v1.Service.type:type_name -> paastry.v1.ServiceType
 	1,  // 1: paastry.v1.Service.state:type_name -> paastry.v1.ServiceState
-	9,  // 2: paastry.v1.Service.created_at:type_name -> google.protobuf.Timestamp
+	11, // 2: paastry.v1.Service.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: paastry.v1.ProvisionServiceRequest.type:type_name -> paastry.v1.ServiceType
 	2,  // 4: paastry.v1.ProvisionServiceResponse.service:type_name -> paastry.v1.Service
 	2,  // 5: paastry.v1.GetServiceResponse.service:type_name -> paastry.v1.Service
-	2,  // 6: paastry.v1.ListServicesResponse.services:type_name -> paastry.v1.Service
-	3,  // 7: paastry.v1.ServiceService.ProvisionService:input_type -> paastry.v1.ProvisionServiceRequest
-	5,  // 8: paastry.v1.ServiceService.GetService:input_type -> paastry.v1.GetServiceRequest
-	7,  // 9: paastry.v1.ServiceService.ListServices:input_type -> paastry.v1.ListServicesRequest
-	4,  // 10: paastry.v1.ServiceService.ProvisionService:output_type -> paastry.v1.ProvisionServiceResponse
-	6,  // 11: paastry.v1.ServiceService.GetService:output_type -> paastry.v1.GetServiceResponse
-	8,  // 12: paastry.v1.ServiceService.ListServices:output_type -> paastry.v1.ListServicesResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	2,  // 6: paastry.v1.DeployServiceResponse.service:type_name -> paastry.v1.Service
+	2,  // 7: paastry.v1.ListServicesResponse.services:type_name -> paastry.v1.Service
+	3,  // 8: paastry.v1.ServiceService.ProvisionService:input_type -> paastry.v1.ProvisionServiceRequest
+	8,  // 9: paastry.v1.ServiceService.DeployService:input_type -> paastry.v1.DeployServiceRequest
+	5,  // 10: paastry.v1.ServiceService.GetService:input_type -> paastry.v1.GetServiceRequest
+	7,  // 11: paastry.v1.ServiceService.ListServices:input_type -> paastry.v1.ListServicesRequest
+	4,  // 12: paastry.v1.ServiceService.ProvisionService:output_type -> paastry.v1.ProvisionServiceResponse
+	9,  // 13: paastry.v1.ServiceService.DeployService:output_type -> paastry.v1.DeployServiceResponse
+	6,  // 14: paastry.v1.ServiceService.GetService:output_type -> paastry.v1.GetServiceResponse
+	10, // 15: paastry.v1.ServiceService.ListServices:output_type -> paastry.v1.ListServicesResponse
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_paastry_v1_services_proto_init() }
@@ -597,7 +736,7 @@ func file_paastry_v1_services_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paastry_v1_services_proto_rawDesc), len(file_paastry_v1_services_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

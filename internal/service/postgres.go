@@ -45,3 +45,7 @@ func (m *postgresManager) Provision(ctx context.Context, spec ProvisionSpec) (*p
 		State: paastryv1.ServiceState_SERVICE_STATE_RUNNING,
 	}, nil
 }
+
+func (m *postgresManager) Deploy(_ context.Context, _ ProvisionSpec, _ string) (*paastryv1.Service, error) {
+	return nil, fmt.Errorf("deploy not supported for postgres")
+}

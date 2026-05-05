@@ -90,8 +90,11 @@ func runServer(ctx context.Context, getenv func(string) string) error {
 	tenantPath, tenantHandler := paastryv1connect.NewTenantServiceHandler(tenantHandler{dbPath: filepath.Join(home, "paastry.db")})
 	mux.Handle(tenantPath, tenantHandler)
 	svcPath, svcHandler := paastryv1connect.NewServiceServiceHandler(serviceHandler{
-		db:      db,
-		manager: service.NewPostgresManager(dc),
+		db: db,
+		managers: map[paastryv1.ServiceType]service.Manager{
+			paastryv1.ServiceType_SERVICE_TYPE_POSTGRES: service.NewPostgresManager(dc),
+			paastryv1.ServiceType_SERVICE_TYPE_APP:      service.NewAppManager(dc),
+		},
 	})
 	mux.Handle(svcPath, svcHandler)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -156,37 +159,76 @@ func (h tenantHandler) GetTenant(
 }
 
 type serviceHandler struct {
-	db      *sql.DB
-	manager service.Manager
+	db       *sql.DB
+	managers map[paastryv1.ServiceType]service.Manager
+}
+
+func (h serviceHandler) managerFor(typ paastryv1.ServiceType) (service.Manager, error) {
+	m, ok := h.managers[typ]
+	if !ok {
+		return nil, fmt.Errorf("unsupported service type: %v", typ)
+	}
+	return m, nil
 }
 
 func (h serviceHandler) ProvisionService(
 	ctx context.Context,
 	req *connect.Request[paastryv1.ProvisionServiceRequest],
 ) (*connect.Response[paastryv1.ProvisionServiceResponse], error) {
+	mgr, err := h.managerFor(req.Msg.Type)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
 	spec := service.ProvisionSpec{
 		Name:       req.Msg.Name,
 		TenantID:   req.Msg.TenantId,
 		Network:    "paastry-tenant-default",
+		Image:      req.Msg.GetImage(),
+		Port:       coercePort(req.Msg.GetPort()),
 		DBName:     "app",
 		DBUser:     "app",
 		DBPassword: "changeme",
 	}
 
-	svc, err := h.manager.Provision(ctx, spec)
+	svc, err := mgr.Provision(ctx, spec)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("provision service: %w", err))
 	}
 
 	_, err = h.db.ExecContext(ctx,
 		`insert into services (id, tenant_id, name, type, state) values (?, ?, ?, ?, ?)`,
-		svc.Id, spec.TenantID, spec.Name, "postgres", svc.State.String(),
+		svc.Id, spec.TenantID, spec.Name, svcTypeDB(req.Msg.Type), svc.State.String(),
 	)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("persist service: %w", err))
 	}
 
 	return connect.NewResponse(&paastryv1.ProvisionServiceResponse{Service: svc}), nil
+}
+
+func (h serviceHandler) DeployService(
+	ctx context.Context,
+	req *connect.Request[paastryv1.DeployServiceRequest],
+) (*connect.Response[paastryv1.DeployServiceResponse], error) {
+	mgr, err := h.managerFor(paastryv1.ServiceType_SERVICE_TYPE_APP)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	spec := service.ProvisionSpec{
+		Name:    "",
+		Network: "paastry-tenant-default",
+		Image:   req.Msg.Image,
+		Port:    coercePort(req.Msg.Port),
+	}
+
+	svc, err := mgr.Deploy(ctx, spec, req.Msg.ServiceId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("deploy service: %w", err))
+	}
+
+	return connect.NewResponse(&paastryv1.DeployServiceResponse{Service: svc}), nil
 }
 
 func (h serviceHandler) GetService(
@@ -240,6 +282,30 @@ func (h serviceHandler) ListServices(
 	return connect.NewResponse(&paastryv1.ListServicesResponse{Services: services}), nil
 }
 
+func svcTypeDB(t paastryv1.ServiceType) string {
+	switch t {
+	case paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED:
+		return "unspecified"
+	case paastryv1.ServiceType_SERVICE_TYPE_POSTGRES:
+		return "postgres"
+	case paastryv1.ServiceType_SERVICE_TYPE_REDIS:
+		return "redis"
+	case paastryv1.ServiceType_SERVICE_TYPE_VALKEY:
+		return "valkey"
+	case paastryv1.ServiceType_SERVICE_TYPE_APP:
+		return "app"
+	default:
+		return "unspecified"
+	}
+}
+
+func coercePort(p int32) uint32 {
+	if p < 1 || p > 65535 {
+		return 0
+	}
+	return uint32(p)
+}
+
 func parseServiceType(s string) paastryv1.ServiceType {
 	switch s {
 	case "postgres":
@@ -248,6 +314,8 @@ func parseServiceType(s string) paastryv1.ServiceType {
 		return paastryv1.ServiceType_SERVICE_TYPE_REDIS
 	case "valkey":
 		return paastryv1.ServiceType_SERVICE_TYPE_VALKEY
+	case "app":
+		return paastryv1.ServiceType_SERVICE_TYPE_APP
 	default:
 		return paastryv1.ServiceType_SERVICE_TYPE_UNSPECIFIED
 	}

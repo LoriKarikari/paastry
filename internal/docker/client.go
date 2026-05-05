@@ -38,6 +38,7 @@ type ServiceCreateSpec struct {
 	Env     []string
 	Network string
 	Mounts  []Mount
+	Port    uint32
 }
 
 type Service struct {
@@ -116,12 +117,24 @@ func (c *Client) ServiceCreate(ctx context.Context, spec ServiceCreateSpec) (*Se
 		task.Networks = []swarm.NetworkAttachmentConfig{{Target: spec.Network}}
 	}
 
-	resp, err := c.inner.ServiceCreate(ctx, client.ServiceCreateOptions{
-		Spec: swarm.ServiceSpec{
-			Annotations:  swarm.Annotations{Name: spec.Name},
-			TaskTemplate: task,
-		},
-	})
+	svcSpec := swarm.ServiceSpec{
+		Annotations:  swarm.Annotations{Name: spec.Name},
+		TaskTemplate: task,
+	}
+	if spec.Port > 0 {
+		svcSpec.EndpointSpec = &swarm.EndpointSpec{
+			Ports: []swarm.PortConfig{
+				{
+					Protocol:      network.TCP,
+					TargetPort:    spec.Port,
+					PublishedPort: 0,
+					PublishMode:   swarm.PortConfigPublishModeIngress,
+				},
+			},
+		}
+	}
+
+	resp, err := c.inner.ServiceCreate(ctx, client.ServiceCreateOptions{Spec: svcSpec})
 	if err != nil {
 		return nil, fmt.Errorf("service create: %w", err)
 	}

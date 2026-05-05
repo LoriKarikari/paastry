@@ -20,6 +20,8 @@ type ProvisionSpec struct {
 	Name       string
 	TenantID   string
 	Network    string
+	Image      string
+	Port       uint32
 	DBName     string
 	DBUser     string
 	DBPassword string
@@ -27,4 +29,5 @@ type ProvisionSpec struct {
 
 type Manager interface {
 	Provision(ctx context.Context, spec ProvisionSpec) (*paastryv1.Service, error)
+	Deploy(ctx context.Context, spec ProvisionSpec, serviceID string) (*paastryv1.Service, error)
 }
