@@ -303,6 +303,55 @@ func TestRunServerListsDefaultTenant(t *testing.T) {
 	}
 }
 
+func TestRunServerProvisionsAndListsServices(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	port := freePort(t)
+	getenv := func(key string) string {
+		switch key {
+		case "PAASTRY_HOME":
+			return home
+		case "HOST":
+			return "127.0.0.1"
+		case "PORT":
+			return port
+		default:
+			return ""
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := run(context.Background(), &stdout, &stderr, []string{"paastry", "init"}, getenv); err != nil {
+		t.Fatalf("run init: %v\nstderr: %s", err, stderr.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, &stdout, &stderr, []string{"paastry", "server"}, getenv)
+	}()
+	waitForHealthz(t, port, &stderr)
+
+	client := paastryv1connect.NewServiceServiceClient(http.DefaultClient, fmt.Sprintf("http://127.0.0.1:%s", port))
+
+	// Provision fails without Docker — but we can at least test ListServices returns empty.
+	res, err := client.ListServices(context.Background(), connect.NewRequest(&paastryv1.ListServicesRequest{TenantId: "tenant-default"}))
+	if err != nil {
+		t.Fatalf("list services: %v", err)
+	}
+	if len(res.Msg.Services) != 0 {
+		t.Fatalf("services count = %d, want 0 (no Docker in test)", len(res.Msg.Services))
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("server shutdown: %v", err)
+	}
+}
+
 func waitForHealthz(t *testing.T, port string, stderr *bytes.Buffer) {
 	t.Helper()
 

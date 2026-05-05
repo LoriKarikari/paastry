@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
@@ -26,11 +27,17 @@ type Network struct {
 	Name string
 }
 
+type Mount struct {
+	Source string
+	Target string
+}
+
 type ServiceCreateSpec struct {
 	Name    string
 	Image   string
 	Env     []string
 	Network string
+	Mounts  []Mount
 }
 
 type Service struct {
@@ -93,12 +100,18 @@ func (c *Client) NetworkRemove(ctx context.Context, id string) error {
 }
 
 func (c *Client) ServiceCreate(ctx context.Context, spec ServiceCreateSpec) (*Service, error) {
-	task := swarm.TaskSpec{
-		ContainerSpec: &swarm.ContainerSpec{
-			Image: spec.Image,
-			Env:   spec.Env,
-		},
+	cspec := &swarm.ContainerSpec{
+		Image: spec.Image,
+		Env:   spec.Env,
 	}
+	for _, m := range spec.Mounts {
+		cspec.Mounts = append(cspec.Mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: m.Source,
+			Target: m.Target,
+		})
+	}
+	task := swarm.TaskSpec{ContainerSpec: cspec}
 	if spec.Network != "" {
 		task.Networks = []swarm.NetworkAttachmentConfig{{Target: spec.Network}}
 	}
